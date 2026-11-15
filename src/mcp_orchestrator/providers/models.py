@@ -1,7 +1,7 @@
 """Pydantic models for provider abstraction layer."""
 
 from typing import List, Optional, Any, Dict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ModelCapabilities(BaseModel):
@@ -12,6 +12,19 @@ class ModelCapabilities(BaseModel):
     supports_audio: bool = False
     max_context_tokens: int = 4096
     max_output_tokens: int = 4096
+
+    # Capability aliases for tool filtering
+    tools: bool = Field(default=False)
+    vision: bool = Field(default=False)
+    reasoning: bool = Field(default=False)
+
+    @model_validator(mode="after")
+    def _sync_capabilities(self) -> "ModelCapabilities":
+        if self.supports_tools:
+            self.tools = True
+        if self.supports_vision:
+            self.vision = True
+        return self
 
 
 class ModelInfo(BaseModel):
