@@ -27,8 +27,7 @@ class OpenAICompatibleProvider(BaseProvider):
         import time
         start = time.time()
         try:
-            response = self.client.get("/models")
-            response.raise_for_status()
+            response = self._make_request("GET", "/models")
             latency_ms = (time.time() - start) * 1000
             return HealthCheckResult(healthy=True, latency_ms=latency_ms, details=response.json())
         except Exception as e:
@@ -165,8 +164,7 @@ class AnthropicProvider(BaseProvider):
         import time
         start = time.time()
         try:
-            response = self.client.get("/models")
-            response.raise_for_status()
+            response = self._make_request("GET", "/v1/models")
             latency_ms = (time.time() - start) * 1000
             return HealthCheckResult(healthy=True, latency_ms=latency_ms, details=response.json())
         except Exception as e:
@@ -174,7 +172,7 @@ class AnthropicProvider(BaseProvider):
             return HealthCheckResult(healthy=False, latency_ms=latency_ms, details={"error": str(e)})
 
     def list_models(self) -> List[ModelInfo]:
-        response = self._make_request("GET", "/models")
+        response = self._make_request("GET", "/v1/models")
         data = response.json()
         models = []
         for m in data.get("data", []):
@@ -226,7 +224,7 @@ class AnthropicProvider(BaseProvider):
             payload["tools"] = tools
         payload.update(kwargs)
 
-        response = self._make_request("POST", "/messages", json=payload)
+        response = self._make_request("POST", "/v1/messages", json=payload)
         data = response.json()
 
         choices = []
@@ -262,8 +260,7 @@ class OllamaProvider(BaseProvider):
         import time
         start = time.time()
         try:
-            response = self.client.get("/api/tags")
-            response.raise_for_status()
+            response = self._make_request("GET", "/api/tags")
             latency_ms = (time.time() - start) * 1000
             return HealthCheckResult(healthy=True, latency_ms=latency_ms, details=response.json())
         except Exception as e:
@@ -309,9 +306,8 @@ class OllamaProvider(BaseProvider):
             payload["num_predict"] = max_tokens
         payload.update(kwargs)
 
-        # Use /api/chat endpoint for Ollama
-        response = self.client.post("/api/chat", json=payload)
-        response.raise_for_status()
+        # Use _make_request for retry logic
+        response = self._make_request("POST", "/api/chat", json=payload)
         data = response.json()
 
         msg = data.get("message", {})

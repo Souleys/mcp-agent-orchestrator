@@ -69,6 +69,16 @@ class Provider(Protocol):
         ...
 
 
+def _is_retryable_error(exc: BaseException) -> bool:
+    """Check if an exception is retryable."""
+    if isinstance(exc, (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        # Retry on 5xx server errors
+        return exc.response.status_code >= 500
+    return False
+
+
 class BaseProvider:
     """Base provider with common HTTP client, retry logic, and timeout handling."""
 
@@ -118,7 +128,7 @@ class BaseProvider:
         @retry(
             stop=stop_after_attempt(max_retries),
             wait=wait_exponential(multiplier=1, min=1, max=10),
-            retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError)),
+            retry=retry_if_exception_type(_is_retryable_error),
             reraise=True,
         )
         def _request() -> httpx.Response:
@@ -140,7 +150,7 @@ class BaseProvider:
         @retry(
             stop=stop_after_attempt(max_retries),
             wait=wait_exponential(multiplier=1, min=1, max=10),
-            retry=retry_if_exception_type((httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError)),
+            retry=retry_if_exception_type(_is_retryable_error),
             reraise=True,
         )
         async def _request() -> httpx.Response:
@@ -151,13 +161,15 @@ class BaseProvider:
         return await _request()
 
     def close(self) -> None:
-        """Close HTTP clients."""
+        """Close synchronous HTTP client."""
         if self._client is not None:
             self._client.close()
             self._client = None
+
+    async def aclose(self) -> None:
+        """Close asynchronous HTTP client."""
         if self._async_client is not None:
-            import asyncio
-            asyncio.run(self._async_client.aclose())
+            await self._async_client.aclose()
             self._async_client = None
 
     def __enter__(self) -> "BaseProvider":
@@ -165,6 +177,12 @@ class BaseProvider:
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self.close()
+
+    async def __aenter__(self) -> "BaseProvider":
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        await self.aclose()
 
     # Abstract methods that subclasses must implement
     def chat_completion(

@@ -1,5 +1,6 @@
 """Provider registry for managing multiple model providers."""
 
+import logging
 from typing import Dict, List, Optional, Type
 from mcp_orchestrator.config import ProviderConfig
 from mcp_orchestrator.providers.base import BaseProvider
@@ -16,6 +17,9 @@ PROVIDER_CLASSES: Dict[str, Type[BaseProvider]] = {
     "ollama": OllamaProvider,
     "openai_compatible": OpenAICompatibleProvider,
 }
+
+
+logger = logging.getLogger(__name__)
 
 
 class ProviderRegistry:
@@ -44,8 +48,17 @@ class ProviderRegistry:
         return provider
 
     def get_all(self) -> List[BaseProvider]:
-        """Get all configured providers."""
-        return [self.get(name) for name in self._configs if self.get(name) is not None]
+        """Get all configured providers, skipping any that fail to initialize."""
+        providers = []
+        for name in self._configs:
+            try:
+                provider = self.get(name)
+                if provider is not None:
+                    providers.append(provider)
+            except Exception as e:
+                # Log the error but continue with other providers
+                logger.warning("Failed to initialize provider '%s': %s", name, e)
+        return providers
 
     def discover_models(self) -> Dict[str, List[ModelInfo]]:
         """Discover models from all providers and cache capabilities."""
@@ -55,7 +68,9 @@ class ProviderRegistry:
                 try:
                     models = provider.list_models()
                     self._model_cache[name] = models
-                except Exception:
+                except Exception as e:
+                    # Log the error but continue with other providers
+                    logger.warning("Failed to discover models for provider '%s': %s", name, e)
                     self._model_cache[name] = []
         return self._model_cache
 

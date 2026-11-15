@@ -19,6 +19,7 @@ from mcp_orchestrator.providers.models import (
     UploadResult,
     HealthCheckResult,
 )
+from mcp_orchestrator.constants import DARKROUTER_ONION, HEALTH_ENDPOINT
 
 
 class DarkRouterProvider(BaseProvider):
@@ -36,18 +37,35 @@ class DarkRouterProvider(BaseProvider):
             }
         return super()._get_default_headers()
 
+    def _get_health_base_url(self) -> str:
+        """Get the base URL for health checks (without /api/v1 prefix)."""
+        # Use the configured base_url, removing /api/v1 if present
+        base = self.config.base_url
+        if base.endswith("/api/v1"):
+            base = base[:-7]  # Remove "/api/v1"
+        elif base.endswith("/api/v1/"):
+            base = base[:-8]  # Remove "/api/v1/"
+        return base
+
     def health_check(self) -> HealthCheckResult:
         import time
         start = time.time()
         try:
             # Health endpoint is at /health relative to the base URL (without /api/v1)
-            health_base = self.config.base_url.replace("/api/v1", "")
-            # Create a temporary client for the health check
-            health_client = httpx.Client(base_url=health_base, timeout=httpx.Timeout(10.0), headers=self._get_default_headers())
-            response = health_client.get("/health")
-            response.raise_for_status()
-            latency_ms = (time.time() - start) * 1000
-            return HealthCheckResult(healthy=True, latency_ms=latency_ms, details=response.json())
+            health_base = self._get_health_base_url()
+            # Use a temporary client with the health base URL
+            health_client = httpx.Client(
+                base_url=health_base,
+                timeout=httpx.Timeout(10.0),
+                headers=self._get_default_headers(),
+            )
+            try:
+                response = health_client.get(HEALTH_ENDPOINT)
+                response.raise_for_status()
+                latency_ms = (time.time() - start) * 1000
+                return HealthCheckResult(healthy=True, latency_ms=latency_ms, details=response.json())
+            finally:
+                health_client.close()
         except Exception as e:
             latency_ms = (time.time() - start) * 1000
             return HealthCheckResult(healthy=False, latency_ms=latency_ms, details={"error": str(e)})
@@ -83,6 +101,13 @@ class DarkRouterProvider(BaseProvider):
         tool_choice: Optional[str] = None,
         **kwargs: Any,
     ) -> ChatCompletionResult:
+        # Handle fallback model support via x_fallback_from
+        fallback_model = kwargs.pop("x_fallback_from", None)
+        if fallback_model:
+            # If the primary model fails, we could try the fallback
+            # For now, include it in the request headers/params
+            kwargs.setdefault("headers", {})["X-Fallback-From"] = fallback_model
+
         msg_dicts = [{"role": m.role, "content": m.content} for m in messages]
         payload = {"model": model, "messages": msg_dicts}
         if temperature is not None:

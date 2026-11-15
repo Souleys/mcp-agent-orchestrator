@@ -26,10 +26,11 @@ class ProviderConfig(BaseModel):
     type: str
     base_url: str
     api_key: str
-    tor_required: bool = False
+    models: List[str] = Field(default_factory=list)
     timeout: int = 30
     max_retries: int = 3
     concurrency_limit: int = 10
+    tor_required: bool = False
 
 
 class MCPServerConfig(BaseModel):
