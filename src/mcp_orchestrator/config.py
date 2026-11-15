@@ -27,6 +27,9 @@ class ProviderConfig(BaseModel):
     base_url: str
     api_key: str
     tor_required: bool = False
+    timeout: int = 30
+    max_retries: int = 3
+    concurrency_limit: int = 10
 
 
 class MCPServerConfig(BaseModel):
